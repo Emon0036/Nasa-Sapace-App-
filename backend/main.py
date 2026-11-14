@@ -309,7 +309,7 @@ class SeasonalSweepRequest(RequestModel):
     site_ids: list[str] = Field(min_length=1, max_length=10)
     start_utc: datetime
     n_dates: int = Field(default=12, ge=4, le=24)
-    duration_hours: float = Field(default=24.0, gt=0.0, le=120.0)
+    duration_hours: float = Field(default=24.0, gt=0.0, le=240.0)
     step_minutes: float = Field(default=15.0, ge=5.0, le=60.0)
     include_terrain: bool = False
 

@@ -203,6 +203,55 @@ class ApiContractTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 422)
 
+    def test_seasonal_sweep_supports_mission_observation_windows(self) -> None:
+        cached = pd.DataFrame({
+            "time_utc": pd.date_range("2026-09-01T00:00:00Z", periods=900, freq="6h"),
+            "site_id": "flat_reference",
+            "sun_alt_deg": 5.0,
+            "sun_az_deg": 0.0,
+            "earth_alt_deg": -5.0,
+            "earth_az_deg": 180.0,
+            "ephemeris_source": "test fixture",
+        })
+        for days in (1, 3, 5, 7, 10):
+            with self.subTest(days=days), patch(
+                "backend.main.analysis._cached_ephemeris_for_site", return_value=cached,
+            ), patch("backend.main.analysis.analyze") as direct_analysis:
+                response = self.request("POST", "/api/seasonal-sweep", json={
+                    "site_ids": ["flat_reference"],
+                    "start_utc": "2026-09-01T06:00:00+06:00",
+                    "n_dates": 8,
+                    "duration_hours": days * 24,
+                    "step_minutes": 5,
+                    "include_terrain": False,
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                direct_analysis.assert_not_called()
+                body = response.json()
+                self.assertEqual(body["start_utc"], "2026-09-01T00:00:00Z")
+                self.assertEqual(body["stride_days"], 27.3)
+                self.assertEqual(body["sites"][0]["horizon_source"], "geometric")
+                samples = body["sites"][0]["samples"]
+                self.assertEqual(len(samples), 8)
+                for sample in samples:
+                    self.assertEqual(sample["sunlit_continuous_hours_max"], days * 24)
+                    self.assertEqual(sample["earth_blackout_minutes"], days * 24 * 60)
+
+    def test_seasonal_sweep_rejects_out_of_range_durations(self) -> None:
+        for duration_hours in (-1, 0, 240.1):
+            with self.subTest(duration_hours=duration_hours), patch(
+                "backend.main.analysis.date_sweep",
+            ) as sweep:
+                response = self.request("POST", "/api/seasonal-sweep", json={
+                    "site_ids": ["flat_reference"],
+                    "start_utc": "2026-09-01T00:00:00Z",
+                    "n_dates": 8,
+                    "duration_hours": duration_hours,
+                })
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["detail"][0]["loc"], ["body", "duration_hours"])
+                sweep.assert_not_called()
+
     def test_ml_predict_uses_the_saved_model_when_available(self) -> None:
         try:
             recommender.load_model()
