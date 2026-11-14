@@ -1,0 +1,5 @@
+# Optional dependencies for the retained legacy Streamlit interface in app.py.
+-r requirements.txt
+streamlit>=1.51
+plotly>=5.18
+kaleido>=0.2

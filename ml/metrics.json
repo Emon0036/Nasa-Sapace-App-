@@ -1,0 +1,64 @@
+{
+  "trained_at_utc": "2026-11-12T21:02:19.732071+00:00",
+  "model": "RandomForestRegressor (two outputs: Sun/Earth altitude) + RandomForestRegressor (cyclic azimuth components)",
+  "dataset_source": "NASA/JPL Horizons API, JPL planetary solution stated in provenance manifest",
+  "dataset_path": "data/processed/horizons_ephemeris.csv",
+  "dataset_rows": 14610,
+  "site_count": 10,
+  "date_coverage_utc": [
+    "2026-06-01T00:00:00+00:00",
+    "2027-06-01T00:00:00+00:00"
+  ],
+  "split": {
+    "method": "GroupShuffleSplit by UTC calendar day; no timestamps from one date are split across train/test",
+    "test_size": 0.2,
+    "random_state": 42,
+    "train_rows": 11650,
+    "test_rows": 2960,
+    "train_dates": 292,
+    "test_dates": 74
+  },
+  "features": [
+    "latitude_deg",
+    "longitude_sin",
+    "longitude_cos",
+    "elevation_km",
+    "annual_sin",
+    "annual_cos",
+    "synodic_sin",
+    "synodic_cos",
+    "sidereal_sin",
+    "sidereal_cos",
+    "anomalistic_sin",
+    "anomalistic_cos"
+  ],
+  "altitude_targets": [
+    "sun_altitude_deg",
+    "earth_altitude_deg"
+  ],
+  "altitude_metrics": {
+    "sun_altitude_deg": {
+      "model_mae_deg": 0.33057276451682904,
+      "model_rmse_deg": 0.46742276433227387,
+      "model_r2": 0.9430799231086511,
+      "mean_baseline_mae_deg": 1.4939482323280364,
+      "mean_baseline_rmse_deg": 1.974401752977861,
+      "mean_baseline_r2": -0.015586256175432744
+    },
+    "earth_altitude_deg": {
+      "model_mae_deg": 0.34660429138898585,
+      "model_rmse_deg": 0.47217123655019605,
+      "model_r2": 0.9904022026158558,
+      "mean_baseline_mae_deg": 4.184969175802575,
+      "mean_baseline_rmse_deg": 4.821832578251955,
+      "mean_baseline_r2": -0.0009140287806876923
+    }
+  },
+  "azimuth_metrics": {
+    "sun_azimuth_circular_mae_deg": 1.0189318652764483,
+    "earth_azimuth_circular_mae_deg": 2.117659782722392
+  },
+  "label_provenance": "Computed apparent, airless topocentric azimuth/elevation from JPL Horizons; not instrument observations.",
+  "interpretation": "Interpolation surrogate within the Horizons date/coordinate coverage; not a future forecast or a replacement for Horizons/SPICE.",
+  "provenance_manifest": "data/processed/horizons_ephemeris.provenance.json"
+}

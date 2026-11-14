@@ -555,15 +555,137 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
       cursor: pointer;
       outline: none;
     }}
+    @media (max-width: 800px) {{
+      body {{ overflow: auto; height: auto; min-height: 100vh; }}
+      .sim-container {{ height: auto; min-height: 100vh; padding: 8px; }}
+      .sim-header {{ align-items: flex-start; flex-direction: column; gap: 8px; }}
+      .sim-telemetry-strip {{ width: 100%; justify-content: space-between; gap: 5px; font-size: 9px; flex-wrap: wrap; }}
+      .telem-item {{ align-items: flex-start; }}
+      .sim-viewport {{ flex-direction: column; }}
+      .sim-canvas-block {{ height: 52vh; min-height: 320px; }}
+      .sim-side-panel {{ width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .golden-banner {{ grid-column: 1 / -1; }}
+      .view-mode-tabs {{ left: 8px; right: 8px; max-width: none; justify-content: center; flex-wrap: wrap; }}
+      .view-btn {{ flex: 1 1 42%; padding: 6px; gap: 5px; }}
+      .view-btn-sub {{ display: none; }}
+      .canvas-legend {{ top: auto; left: 8px; bottom: 8px; min-width: 0; padding: 7px 9px; font-size: 9px; }}
+      .sim-caption {{ grid-template-columns: 1fr; }}
+      .sim-controls {{ padding: 8px; }}
+      .btn-row {{ align-items: flex-start; flex-direction: column; }}
+      .btn-group-left {{ flex-wrap: wrap; }}
+      .phase-jumps {{ width: 100%; flex-wrap: wrap; }}
+      .time-readout {{ min-width: 90px; font-size: 9px; }}
+    }}
+    @media (max-width: 480px) {{
+      .sim-side-panel {{ grid-template-columns: 1fr; }}
+      .telem-item {{ min-width: 44%; }}
+      .phase-jumps {{ gap: 3px; }}
+      .phase-btn {{ padding: 4px 6px; }}
+    }}
+
+    /* High-contrast mission control layout */
+    .sim-container {{ gap: 9px; padding: 10px 12px; background: #050b15; }}
+    .sim-header {{ gap: 14px; padding: 10px 14px; background: #0a1524; border-color: rgba(132, 170, 221, .3); backdrop-filter: none; }}
+    .sim-header-main {{ min-width: 210px; display: flex; align-items: center; gap: 16px; }}
+    .sim-identity {{ display: flex; flex-direction: column; gap: 3px; }}
+    .sim-identity strong {{ color: #f5f8fd; font-size: 18px; line-height: 1.15; letter-spacing: -.02em; }}
+    .sim-identity small {{ color: #b1bfd2; font-size: 11px; line-height: 1.35; }}
+    .sim-title-group {{ flex-wrap: wrap; gap: 7px; }}
+    .sim-badge, .sim-phase-badge {{ font-size: 11px; letter-spacing: .04em; }}
+    .sim-telemetry-strip {{ gap: 16px; font-size: 13px; }}
+    .telem-item {{ align-items: flex-start; }}
+    .telem-label {{ color: #b2c0d3; font-size: 10px; letter-spacing: .04em; }}
+    .telem-val {{ font-size: 14px; }}
+    .telem-sub {{ align-self: flex-start; font-size: 11px; }}
+    .mission-phase-track {{ display: grid; grid-template-columns: .95fr 2fr 1.15fr 1.35fr 2fr; gap: 6px; flex-shrink: 0; }}
+    .mission-phase-step {{ min-width: 0; display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid rgba(128, 154, 189, .25); border-radius: 7px; color: #c2cede; background: #0b1727; text-align: left; }}
+    .mission-phase-step:hover {{ border-color: rgba(91, 168, 255, .7); background: #10233a; }}
+    .phase-step-number {{ display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(144, 167, 198, .35); border-radius: 50%; color: #b7c4d7; font: 700 11px ui-monospace, monospace; }}
+    .phase-step-copy {{ min-width: 0; display: flex; flex-direction: column; gap: 2px; }}
+    .phase-step-copy strong {{ overflow: hidden; color: #e5ebf4; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }}
+    .phase-step-copy small {{ overflow: hidden; color: #aab8cb; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }}
+    .mission-phase-step.complete {{ border-color: rgba(91, 168, 255, .45); background: rgba(24, 69, 120, .42); }}
+    .mission-phase-step.complete .phase-step-number {{ border-color: #67b5ff; color: #fff; background: #176dcc; }}
+    .mission-phase-step.active {{ border-color: #4fafff; color: #fff; background: linear-gradient(135deg, rgba(31, 123, 219, .9), rgba(18, 65, 126, .88)); box-shadow: 0 0 18px rgba(44, 143, 255, .18); }}
+    .mission-phase-step.active .phase-step-number {{ border-color: #d6ecff; color: #06345f; background: #e1f2ff; }}
+    .mission-phase-step[data-phase="SURFACE OPS"].active {{ border-color: #45dfa8; background: linear-gradient(135deg, rgba(21, 132, 95, .9), rgba(10, 76, 65, .9)); }}
+    .sim-viewport {{ gap: 10px; }}
+    .sim-canvas-wrapper {{ border-color: rgba(112, 160, 220, .35); border-radius: 12px; box-shadow: none; }}
+    .sim-side-panel {{ width: 270px; gap: 8px; }}
+    .gauge-card {{ gap: 9px; padding: 12px 13px; border-color: rgba(117, 154, 204, .32); background: #0b1727; backdrop-filter: none; }}
+    .gauge-header {{ color: #d8e2ef; font-size: 13px; letter-spacing: .02em; }}
+    .gauge-meter-bar {{ height: 12px; }}
+    .gauge-status-row {{ font-size: 12px; }}
+    .status-pill {{ padding: 3px 7px; font-size: 10px; }}
+    .golden-banner {{ gap: 6px; padding: 11px 12px; font-size: 12px; }}
+    .golden-title {{ font-size: 12px; }}
+    .golden-sub {{ color: #c0ccda; font-size: 11px; line-height: 1.45; }}
+    .view-mode-tabs {{ gap: 5px; padding: 5px; border-color: rgba(118, 153, 199, .42); background: #081321; backdrop-filter: none; }}
+    .view-btn {{ padding: 8px 10px; gap: 7px; color: #d8e4f3; font-size: 12px; }}
+    .view-btn-title {{ font-size: 12px; }}
+    .view-btn-sub {{ color: #becbdd; font-size: 10px; }}
+    .canvas-legend {{ gap: 6px; min-width: 180px; padding: 11px 13px; border-color: rgba(135, 170, 218, .45); background: #081321; backdrop-filter: none; font-size: 12px; }}
+    .legend-heading {{ color: #c5d3e4; font-size: 10px; }}
+    .legend-row {{ gap: 9px; }}
+    .legend-swatch {{ width: 13px; height: 13px; }}
+    .sim-caption {{ display: none; }}
+    .sim-controls {{ gap: 10px; padding: 10px 14px; border-color: rgba(128, 157, 197, .35); background: #0a1524; backdrop-filter: none; }}
+    .scrubber-row {{ gap: 15px; }}
+    .timeline-slider {{ height: 8px; }}
+    .timeline-slider::-webkit-slider-thumb {{ width: 19px; height: 19px; }}
+    .timeline-slider::-moz-range-thumb {{ width: 19px; height: 19px; }}
+    .time-readout {{ min-width: 145px; color: #d0dbea; font-size: 12px; }}
+    .ctrl-btn {{ min-height: 36px; padding: 7px 13px; font-size: 13px; }}
+    .ctrl-btn.nudge {{ font-size: 14px; }}
+    .phase-jumps {{ gap: 6px; }}
+    .phase-btn {{ padding: 6px 10px; color: #d1dced; font-size: 11px; }}
+    .speed-select {{ min-height: 35px; padding: 5px 9px; font-size: 12px; }}
+    @media (max-width: 800px) {{
+      .sim-container {{ gap: 8px; padding: 8px; }}
+      .sim-header {{ align-items: stretch; flex-direction: column; gap: 10px; }}
+      .sim-header-main {{ align-items: flex-start; justify-content: space-between; }}
+      .sim-telemetry-strip {{ gap: 9px 14px; font-size: 12px; }}
+      .telem-item {{ min-width: 42%; }}
+      .telem-label {{ font-size: 10px; }}
+      .telem-val {{ font-size: 13px; }}
+      .mission-phase-track {{ grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }}
+      .mission-phase-step {{ align-items: flex-start; flex-direction: column; gap: 5px; padding: 7px; }}
+      .phase-step-number {{ width: 22px; height: 22px; }}
+      .phase-step-copy strong {{ font-size: 10px; }}
+      .phase-step-copy small {{ font-size: 9px; }}
+      .sim-side-panel {{ width: 100%; gap: 8px; }}
+      .gauge-card {{ min-height: 124px; }}
+      .view-mode-tabs {{ max-width: none; }}
+      .view-btn {{ flex: 1 1 42%; }}
+      .canvas-legend {{ font-size: 11px; }}
+      .sim-caption {{ display: none; }}
+      .btn-row {{ align-items: center; flex-direction: row; }}
+      .phase-jumps {{ width: auto; flex-wrap: wrap; }}
+    }}
+    @media (max-width: 480px) {{
+      .sim-header-main {{ flex-direction: column; gap: 8px; }}
+      .sim-identity strong {{ font-size: 17px; }}
+      .mission-phase-track {{ grid-template-columns: repeat(5, minmax(88px, 1fr)); overflow-x: auto; padding-bottom: 3px; }}
+      .mission-phase-step {{ min-height: 76px; }}
+      .sim-side-panel {{ grid-template-columns: 1fr; }}
+      .gauge-card {{ min-height: auto; }}
+      .btn-row {{ align-items: stretch; flex-direction: column; }}
+      .phase-jumps {{ width: 100%; }}
+      .phase-btn {{ flex: 1 1 auto; }}
+      .time-readout {{ min-width: 95px; font-size: 10px; }}
+    }}
   </style>
 </head>
 <body>
   <div class="sim-container">
     <!-- Header HUD -->
     <div class="sim-header">
-      <div class="sim-title-group">
-        <span class="sim-badge" id="siteNameBadge">Site</span>
-        <span class="sim-phase-badge" id="phaseBadge">SURFACE OPS</span>
+      <div class="sim-header-main">
+        <div class="sim-identity"><strong>Mission Simulation</strong><small>Earth launch to lunar south pole surface operations</small></div>
+        <div class="sim-title-group">
+          <span class="sim-badge" id="siteNameBadge">Site</span>
+          <span class="sim-phase-badge" id="phaseBadge">SURFACE OPS</span>
+        </div>
       </div>
       <div class="sim-telemetry-strip">
         <div class="telem-item">
@@ -586,12 +708,20 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
       </div>
     </div>
 
+    <div class="mission-phase-track" aria-label="Mission phases">
+      <button class="mission-phase-step" type="button" data-phase="LAUNCH" aria-label="Go to launch phase"><span class="phase-step-number">01</span><span class="phase-step-copy"><strong>Launch</strong><small id="phase-duration-launch">Earth departure</small></span></button>
+      <button class="mission-phase-step" type="button" data-phase="TRANSIT" aria-label="Go to transit phase"><span class="phase-step-number">02</span><span class="phase-step-copy"><strong>Transit</strong><small id="phase-duration-transit">Earth to Moon</small></span></button>
+      <button class="mission-phase-step" type="button" data-phase="LUNAR ORBIT" aria-label="Go to lunar orbit phase"><span class="phase-step-number">03</span><span class="phase-step-copy"><strong>Lunar orbit</strong><small id="phase-duration-orbit">Orbit insertion</small></span></button>
+      <button class="mission-phase-step" type="button" data-phase="POWERED DESCENT" aria-label="Go to descent phase"><span class="phase-step-number">04</span><span class="phase-step-copy"><strong>Descent</strong><small id="phase-duration-descent">Landing sequence</small></span></button>
+      <button class="mission-phase-step" type="button" data-phase="SURFACE OPS" aria-label="Go to surface operations phase"><span class="phase-step-number">05</span><span class="phase-step-copy"><strong>Surface operations</strong><small id="phase-duration-surface">Calculated sky telemetry</small></span></button>
+    </div>
+
     <!-- Main Viewport Area -->
     <div class="sim-viewport">
       <div class="sim-canvas-block">
       <div class="sim-canvas-wrapper" id="canvasWrapper">
         <div class="view-mode-tabs" id="viewModeTabs">
-          <button class="view-btn active" data-view="split">
+          <button class="view-btn" data-view="split">
             <span class="view-btn-icon">🔀</span>
             <span class="view-btn-stack">
               <span class="view-btn-title">Split View</span>
@@ -612,7 +742,7 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
               <span class="view-btn-sub">180° panorama from the lander</span>
             </span>
           </button>
-          <button class="view-btn" data-view="orbit">
+          <button class="view-btn active" data-view="orbit">
             <span class="view-btn-icon">🚀</span>
             <span class="view-btn-stack">
               <span class="view-btn-title">Flight Trajectory</span>
@@ -735,11 +865,11 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
 
         <!-- Quick Phase Selector Buttons -->
         <div class="phase-jumps">
-          <button class="phase-btn" data-time="0">Launch</button>
-          <button class="phase-btn" data-time="0.1">Transit</button>
-          <button class="phase-btn" data-time="0.48">Orbit</button>
-          <button class="phase-btn" data-time="0.52">Descent</button>
-          <button class="phase-btn active" data-time="0.6">Surface</button>
+          <button class="phase-btn" data-phase="LAUNCH">Launch</button>
+          <button class="phase-btn" data-phase="TRANSIT">Transit</button>
+          <button class="phase-btn" data-phase="LUNAR ORBIT">Orbit</button>
+          <button class="phase-btn" data-phase="POWERED DESCENT">Descent</button>
+          <button class="phase-btn active" data-phase="SURFACE OPS">Surface</button>
         </div>
       </div>
     </div>
@@ -753,7 +883,7 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
     let isPlaying = false;
     let speed = 15;
     let currentTimeSec = (plan.launch_seconds + plan.transit_seconds + plan.orbit_seconds + plan.descent_seconds); // Start in surface ops by default
-    let activeView = "split"; // 'radar', 'horizon', 'split', 'orbit'
+    let activeView = "orbit"; // Begin with the Earth-to-Moon mission overview.
     let lastTimestamp = 0;
 
     // Elements
@@ -769,6 +899,35 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
     const utcVal = document.getElementById("utcVal");
     const sunAltVal = document.getElementById("sunAltVal");
     const earthAltVal = document.getElementById("earthAltVal");
+    const phaseOrder = ["LAUNCH", "TRANSIT", "LUNAR ORBIT", "POWERED DESCENT", "SURFACE OPS"];
+    const phaseStarts = {{
+      "LAUNCH": 0,
+      "TRANSIT": plan.launch_seconds,
+      "LUNAR ORBIT": plan.launch_seconds + plan.transit_seconds,
+      "POWERED DESCENT": plan.launch_seconds + plan.transit_seconds + plan.orbit_seconds,
+      "SURFACE OPS": plan.launch_seconds + plan.transit_seconds + plan.orbit_seconds + plan.descent_seconds,
+    }};
+    const phaseSteps = Array.from(document.querySelectorAll(".mission-phase-step"));
+    const formatPhaseDuration = (seconds) => seconds >= 86400
+      ? `≈ ${{(seconds / 86400).toFixed(seconds % 86400 === 0 ? 0 : 1)}} days`
+      : seconds >= 3600 ? `≈ ${{(seconds / 3600).toFixed(1)}} hours` : `≈ ${{Math.max(1, Math.round(seconds / 60))}} min`;
+    document.getElementById("phase-duration-launch").textContent = formatPhaseDuration(plan.launch_seconds);
+    document.getElementById("phase-duration-transit").textContent = formatPhaseDuration(plan.transit_seconds);
+    document.getElementById("phase-duration-orbit").textContent = formatPhaseDuration(plan.orbit_seconds);
+    document.getElementById("phase-duration-descent").textContent = formatPhaseDuration(plan.descent_seconds);
+    document.getElementById("phase-duration-surface").textContent = formatPhaseDuration(plan.surface_seconds);
+    function updatePhaseSteps(phase) {{
+      const activeIndex = phaseOrder.indexOf(phase);
+      phaseSteps.forEach((step, index) => {{
+        step.classList.toggle("active", index === activeIndex);
+        step.classList.toggle("complete", index < activeIndex);
+        if (index === activeIndex) step.setAttribute("aria-current", "step");
+        else step.removeAttribute("aria-current");
+      }});
+      document.querySelectorAll(".phase-btn").forEach((button) => {{
+        button.classList.toggle("active", button.dataset.phase === phase);
+      }});
+    }}
     const powerPctText = document.getElementById("powerPctText");
     const powerFill = document.getElementById("powerFill");
     const powerStatusPill = document.getElementById("powerStatusPill");
@@ -1512,6 +1671,7 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
     function updateTelemetryUI(phase, telem) {{
       phaseBadge.textContent = phase;
       phaseBadge.classList.toggle("golden", telem.sunVis && telem.earthVis);
+      updatePhaseSteps(phase);
 
       metVal.textContent = formatMET(currentTimeSec);
       // Append mission-total denominator beside MET for context
@@ -1614,15 +1774,17 @@ def get_simulator_html(plan_data: Dict[str, Any], height: int = 760) -> str:
       speed = parseFloat(e.target.value);
     }});
 
-    // Phase Jump Buttons
-    document.querySelectorAll(".phase-btn").forEach(btn => {{
-      btn.addEventListener("click", () => {{
-        document.querySelectorAll(".phase-btn").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        const frac = parseFloat(btn.dataset.time);
-        currentTimeSec = frac * plan.total_seconds;
-        timeSlider.value = frac * 1000;
-      }});
+    // Phase selectors use the actual plan boundaries, not fixed timeline fractions.
+    function jumpToPhase(phase) {{
+      isPlaying = false;
+      playBtn.textContent = "▶ Play";
+      currentTimeSec = phaseStarts[phase] ?? 0;
+      timeSlider.value = (currentTimeSec / plan.total_seconds) * 1000;
+      updatePhaseSteps(phase);
+    }}
+    phaseSteps.forEach((step) => step.addEventListener("click", () => jumpToPhase(step.dataset.phase)));
+    document.querySelectorAll(".phase-btn").forEach((btn) => {{
+      btn.addEventListener("click", () => jumpToPhase(btn.dataset.phase));
     }});
 
     // View Mode Tabs

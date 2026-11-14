@@ -21,7 +21,12 @@ except Exception:
     go = None  # type: ignore
     make_subplots = None  # type: ignore
 
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+    _MATPLOTLIB_OK = True
+except Exception:
+    plt = None  # type: ignore[assignment]
+    _MATPLOTLIB_OK = False
 
 from . import horizon
 
@@ -74,8 +79,7 @@ def _apply_dark_layout(fig, height: int = 500) -> None:
 def sky_polar_plotly(df: pd.DataFrame,
                      title: str = "Sky track",
                      horizon_profile: Optional[horizon.HorizonProfile] = None,
-                     height: int = 520,
-                     current_index: Optional[int] = None) -> "go.Figure":
+                     height: int = 520) -> "go.Figure":
     if not _PLOTLY_OK:
         raise RuntimeError("plotly is not installed")
 
@@ -118,31 +122,6 @@ def sky_polar_plotly(df: pd.DataFrame,
         customdata=df["sun_alt_deg"],
     ))
 
-    if current_index is not None and len(df):
-        i = int(np.clip(current_index, 0, len(df) - 1))
-        fig.add_trace(go.Scatterpolar(
-            r=[max(0.0, 90.0 - float(df.iloc[i]["sun_alt_deg"]))],
-            theta=[float(df.iloc[i]["sun_az_deg"])],
-            mode="markers+text", name="Current Sun",
-            text=["SUN NOW"], textposition="top center",
-            marker=dict(color=COLOR_SUN, size=14, symbol="star",
-                        line=dict(color="white", width=1)),
-            hovertemplate=("Sun now<br>UTC %{customdata[0]}<br>"
-                           "az %{theta:.2f}Â°<br>alt %{customdata[1]:+.2f}Â°<extra></extra>"),
-            customdata=[[str(df.iloc[i]["time_utc"]), float(df.iloc[i]["sun_alt_deg"])]],
-        ))
-        fig.add_trace(go.Scatterpolar(
-            r=[max(0.0, 90.0 - float(df.iloc[i]["earth_alt_deg"]))],
-            theta=[float(df.iloc[i]["earth_az_deg"])],
-            mode="markers+text", name="Current Earth",
-            text=["EARTH NOW"], textposition="top center",
-            marker=dict(color=COLOR_EARTH, size=14, symbol="diamond",
-                        line=dict(color="white", width=1)),
-            hovertemplate=("Earth now<br>UTC %{customdata[0]}<br>"
-                           "az %{theta:.2f}Â°<br>alt %{customdata[1]:+.2f}Â°<extra></extra>"),
-            customdata=[[str(df.iloc[i]["time_utc"]), float(df.iloc[i]["earth_alt_deg"])]],
-        ))
-
     fig.update_layout(
         polar=dict(
             bgcolor=COLOR_BG,
@@ -171,79 +150,10 @@ def sky_polar_plotly(df: pd.DataFrame,
     return fig
 
 
-def astronaut_ground_view_plotly(
-    df: pd.DataFrame,
-    horizon_profile: horizon.HorizonProfile,
-    current_index: int,
-    title: str = "Astronaut ground perspective",
-    heading_deg: float = 0.0,
-    height: int = 480,
-) -> "go.Figure":
-    """Render a ground-level lunar sky view from real azimuth/elevation data.
-
-    The horizontal axis is a 180-degree field of view centered on ``heading``.
-    The terrain line is sampled from the selected site's horizon profile; Sun
-    and Earth markers use the current SPICE-derived row.
-    """
-    if not _PLOTLY_OK:
-        raise RuntimeError("plotly is not installed")
-    i = int(np.clip(current_index, 0, len(df) - 1))
-    # unwrap azimuth around the astronaut's heading into [-180, 180].
-    az = np.asarray(horizon_profile.azimuth_deg, dtype=float)
-    rel = (az - float(heading_deg) + 180.0) % 360.0 - 180.0
-    order = np.argsort(rel)
-    rel = rel[order]
-    terrain = np.asarray(horizon_profile.elevation_deg, dtype=float)[order]
-    visible = (rel >= -90.0) & (rel <= 90.0)
-    rel, terrain = rel[visible], terrain[visible]
-
-    def relative_body_az(value):
-        return (float(value) - float(heading_deg) + 180.0) % 360.0 - 180.0
-
-    sun_x = relative_body_az(df.iloc[i]["sun_az_deg"])
-    earth_x = relative_body_az(df.iloc[i]["earth_az_deg"])
-    sun_y = float(df.iloc[i]["sun_alt_deg"])
-    earth_y = float(df.iloc[i]["earth_alt_deg"])
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=rel, y=terrain, mode="lines", name="Local terrain horizon",
-        line=dict(color=COLOR_HORIZON, width=2, dash="dash"),
-        fill="tozeroy", fillcolor="rgba(80,95,125,0.25)",
-        hovertemplate="Az %{x:.1f}°<br>terrain %{y:+.2f}°<extra></extra>",
-    ))
-    fig.add_hline(y=0, line_color=COLOR_AXIS, line_width=1,
-                  annotation_text="astronomical horizon",
-                  annotation_font_color=COLOR_TEXT_MUTED)
-    fig.add_trace(go.Scatter(
-        x=[sun_x], y=[sun_y], mode="markers+text", name="Sun",
-        text=[f"SUN  {sun_y:+.2f}°"], textposition="top center",
-        marker=dict(color=COLOR_SUN, size=18, symbol="star",
-                    line=dict(color="white", width=1)),
-        customdata=[[float(df.iloc[i]["sun_az_deg"]), sun_y]],
-        hovertemplate="SUN<br>az %{customdata[0]:.2f}°<br>el %{customdata[1]:+.2f}°<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=[earth_x], y=[earth_y], mode="markers+text", name="Earth",
-        text=[f"EARTH  {earth_y:+.2f}°"], textposition="top center",
-        marker=dict(color=COLOR_EARTH, size=16, symbol="diamond",
-                    line=dict(color="white", width=1)),
-        customdata=[[float(df.iloc[i]["earth_az_deg"]), earth_y]],
-        hovertemplate="EARTH<br>az %{customdata[0]:.2f}°<br>el %{customdata[1]:+.2f}°<extra></extra>",
-    ))
-    fig.update_xaxes(range=[-90, 90], dtick=30, title="Relative azimuth (°)",
-                     gridcolor=COLOR_GRID, zerolinecolor=COLOR_AXIS)
-    fig.update_yaxes(range=[-10, 90], dtick=15, title="Elevation (°)",
-                     gridcolor=COLOR_GRID, zerolinecolor=COLOR_AXIS)
-    fig.update_layout(title=title, hovermode="closest")
-    _apply_dark_layout(fig, height=height)
-    return fig
-
-
 def elevation_vs_time_plotly(df: pd.DataFrame,
                              horizon_profile: Optional[horizon.HorizonProfile] = None,
                              title: str = "Altitude vs time",
-                             height: int = 600,
-                             current_time=None) -> "go.Figure":
+                             height: int = 600) -> "go.Figure":
     if not _PLOTLY_OK:
         raise RuntimeError("plotly is not installed")
 
@@ -286,22 +196,6 @@ def elevation_vs_time_plotly(df: pd.DataFrame,
 
     for r in (1, 2):
         fig.add_hline(y=0, line_color=COLOR_AXIS, line_width=1, row=r, col=1)
-
-    if "sun_visible" in df.columns and "earth_visible" in df.columns:
-        overlap = df["sun_visible"].astype(bool) & df["earth_visible"].astype(bool)
-        start = None
-        for i, active in enumerate(overlap.to_numpy()):
-            if active and start is None:
-                start = i
-            if start is not None and (not active or i == len(overlap) - 1):
-                end = i if active and i == len(overlap) - 1 else i - 1
-                fig.add_vrect(x0=df.iloc[start]["time_utc"], x1=df.iloc[end]["time_utc"],
-                              fillcolor="#2dd4a7", opacity=0.10, line_width=0,
-                              annotation_text="GOLDEN WINDOW", annotation_position="top left")
-                start = None
-    if current_time is not None:
-        fig.add_vline(x=current_time, line_color="#ff6b8a", line_width=2,
-                      annotation_text="CURRENT", annotation_position="top")
 
     fig.update_yaxes(title_text="altitude (°)", gridcolor=COLOR_GRID,
                      zerolinecolor=COLOR_AXIS,
@@ -369,132 +263,13 @@ def date_sweep_heatmap_plotly(sweeps: dict, metric: str, title: str) -> "go.Figu
     return fig
 
 
-def comparison_bars_plotly(results: dict, height: int = 380) -> "go.Figure":
-    """Grouped horizontal-bar comparison of key metrics across sites.
-
-    `results` is the dict produced in `app.py` of shape
-        { site_id: { "site": Site, "df": DataFrame, "summary": Summary, ... } }
-    Renders four bars per site (sunlit %, earth visible %, golden window %,
-    longest sunlit streak hours normalised to 0-100).
-    """
-    if not _PLOTLY_OK:
-        raise RuntimeError("plotly is not installed")
-
-    sites = [v["site"] for v in results.values()]
-    names = [s.name for s in sites]
-    summaries = [v["summary"] for v in results.values()]
-
-    # Longest streak normalised to 0..100 with a soft cap of 24 hours so
-    # very long streaks don't compress the other bars.
-    streaks = [min(100.0, s.sunlit_continuous_hours_max / 24.0 * 100.0)
-               for s in summaries]
-
-    metrics = [
-        ("Sunlit %",          [s.sun_above_real_horizon_pct    for s in summaries], COLOR_SUN),
-        ("Earth Comm %",      [s.earth_above_real_horizon_pct for s in summaries], COLOR_EARTH),
-        ("Golden Window %",   [s.golden_window_pct            for s in summaries], "#4ade80"),
-        ("Max Streak (0-24h)", streaks,                                                "#b794ff"),
-    ]
-
-    fig = go.Figure()
-    for label, values, color in metrics:
-        fig.add_trace(go.Bar(
-            y=names,
-            x=values,
-            name=label,
-            orientation="h",
-            marker=dict(color=color, line=dict(color="rgba(255,255,255,0.08)", width=1)),
-            hovertemplate="<b>%{y}</b><br>" + label + ": %{x:.1f}<extra></extra>",
-        ))
-
-    fig.update_layout(
-        barmode="group",
-        title="Cross-site metric comparison",
-        xaxis=dict(title=dict(text="Value", font=dict(color=COLOR_TEXT_MUTED)),
-                   tickfont=dict(color=COLOR_TEXT_MUTED),
-                   gridcolor=COLOR_GRID, zerolinecolor=COLOR_AXIS,
-                   range=[0, 105]),
-        yaxis=dict(autorange="reversed", tickfont=dict(color=COLOR_TEXT),
-                   gridcolor=COLOR_GRID),
-    )
-    _apply_dark_layout(fig, height=height)
-    return fig
-
-
-def altitude_strip_plotly(df: pd.DataFrame,
-                          horizon_profile: Optional[horizon.HorizonProfile] = None,
-                          hours: int = 24,
-                          height: int = 320,
-                          title: str = "First 24 hours — Sun & Earth altitude") -> "go.Figure":
-    """Compact altitude-vs-time strip for the first `hours` hours of the analysis.
-
-    Used in the Site Deep Dive tab to show the daily rhythm in a glance.
-    """
-    if not _PLOTLY_OK:
-        raise RuntimeError("plotly is not installed")
-    if df.empty:
-        fig = go.Figure()
-        _apply_dark_layout(fig, height=height)
-        return fig
-
-    times = pd.to_datetime(df["time_utc"], utc=True)
-    end = times.iloc[0] + pd.Timedelta(hours=hours)
-    mask = times <= end
-    df_s = df.loc[mask].reset_index(drop=True)
-    times_s = times.loc[mask].reset_index(drop=True)
-
-    fig = go.Figure()
-    # Terrain fill: above this altitude = visible for the sun
-    if horizon_profile is not None and "sun_horizon_deg" in df_s.columns:
-        fig.add_trace(go.Scatter(
-            x=times_s, y=df_s["sun_horizon_deg"],
-            name="Terrain horizon (sun az)",
-            line=dict(color=COLOR_HORIZON, width=1, dash="dot"),
-            hoverinfo="skip",
-        ))
-        fig.add_trace(go.Scatter(
-            x=times_s, y=df_s["earth_horizon_deg"],
-            name="Terrain horizon (earth az)",
-            line=dict(color="rgba(160,180,220,0.35)", width=1, dash="dot"),
-            hoverinfo="skip",
-        ))
-
-    fig.add_trace(go.Scatter(
-        x=times_s, y=df_s["sun_alt_deg"],
-        name="Sun altitude",
-        line=dict(color=COLOR_SUN, width=2),
-        fill="tozeroy",
-        fillcolor="rgba(255,184,69,0.10)",
-        hovertemplate="Sun: %{y:+.2f}°<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=times_s, y=df_s["earth_alt_deg"],
-        name="Earth altitude",
-        line=dict(color=COLOR_EARTH, width=2),
-        hovertemplate="Earth: %{y:+.2f}°<extra></extra>",
-    ))
-
-    fig.update_layout(
-        title=title,
-        xaxis=dict(title="", tickfont=dict(color=COLOR_TEXT_MUTED),
-                   gridcolor=COLOR_GRID),
-        yaxis=dict(title="Altitude (°)", tickfont=dict(color=COLOR_TEXT_MUTED),
-                   gridcolor=COLOR_GRID, zerolinecolor=COLOR_AXIS,
-                   range=[-5, 90]),
-        hovermode="x unified",
-        hoverlabel=dict(bgcolor="rgba(18,24,44,0.95)",
-                        bordercolor=COLOR_EARTH,
-                        font=dict(color=COLOR_TEXT)),
-    )
-    _apply_dark_layout(fig, height=height)
-    return fig
-
-
 # ---------------------------------------------------------------------------
 # Matplotlib (static fallback / small multiples)
 # ---------------------------------------------------------------------------
 
 def _mpl_dark_style():
+    if not _MATPLOTLIB_OK:
+        raise RuntimeError("Matplotlib's native plotting backend is unavailable")
     plt.rcParams.update({
         "figure.facecolor":  MPL_BG,
         "axes.facecolor":    MPL_BG,
@@ -551,6 +326,8 @@ def sky_polar_mpl(df: pd.DataFrame,
 
 
 def comparison_grid_mpl(dfs: dict, title: str = "Site comparison"):
+    if not _MATPLOTLIB_OK:
+        raise RuntimeError("Matplotlib's native plotting backend is unavailable")
     n = len(dfs)
     cols = min(3, n)
     rows = (n + cols - 1) // cols
@@ -567,76 +344,57 @@ def comparison_grid_mpl(dfs: dict, title: str = "Site comparison"):
     return fig
 
 
-def comparison_multi_polar_plotly(results_dict: dict, height: int = 580) -> "go.Figure":
-    """Interactive multi-site comparison polar radar.
-    Each site's sun track and terrain mask can be compared on a single radar.
-    """
+def comparison_grid_plotly(dfs: dict, title: str = "Site comparison") -> "go.Figure":
+    """Interactive cross-site altitude tracks; works without Matplotlib."""
     if not _PLOTLY_OK:
         raise RuntimeError("plotly is not installed")
-
-    fig = go.Figure()
-    palette = [
-        ("#ffb845", "rgba(255, 184, 69, 0.4)"),
-        ("#4ea1ff", "rgba(78, 161, 255, 0.4)"),
-        ("#2dd4a7", "rgba(45, 212, 167, 0.4)"),
-        ("#ff6b8a", "rgba(255, 107, 138, 0.4)"),
-        ("#b388ff", "rgba(179, 136, 255, 0.4)"),
-        ("#00e5ff", "rgba(0, 229, 255, 0.4)"),
-    ]
-
-    for idx, (name, payload) in enumerate(results_dict.items()):
-        df = payload["df"]
-        prof = payload.get("profile")
-        color, _ = palette[idx % len(palette)]
-
-        # Site Sun track
-        fig.add_trace(go.Scatterpolar(
-            r=90 - df["sun_alt_deg"].clip(lower=-5),
-            theta=df["sun_az_deg"],
-            mode="lines+markers",
-            name=f"{name} (Sun)",
-            line=dict(color=color, width=2.2),
-            marker=dict(size=4, color=color),
-            hovertemplate=f"<b>{name}</b><br>Sun Az: %{{theta:.1f}}°<br>Sun Alt: %{{customdata:.2f}}°<extra></extra>",
-            customdata=df["sun_alt_deg"],
-        ))
-
-        # Terrain mask
-        if prof is not None:
-            fig.add_trace(go.Scatterpolar(
-                r=90 - np.asarray(prof.elevation_deg),
-                theta=np.asarray(prof.azimuth_deg),
-                mode="lines",
-                name=f"{name} (Horizon)",
-                line=dict(color=color, width=1.2, dash="dot"),
-                visible="legendonly" if idx > 0 else True,
-                hovertemplate=f"<b>{name} Horizon</b><br>Az: %{{theta:.1f}}°<br>Alt: %{{customdata:.2f}}°<extra></extra>",
-                customdata=np.asarray(prof.elevation_deg),
-            ))
-
-    fig.update_layout(
-        polar=dict(
-            bgcolor=COLOR_BG,
-            radialaxis=dict(
-                range=[0, 95],
-                tickvals=[0, 30, 60, 90],
-                ticktext=["90° (Zenith)", "60°", "30°", "0° (Horizon)"],
-                angle=90, tickangle=90,
-                gridcolor=COLOR_GRID,
-                linecolor=COLOR_AXIS,
-                tickfont=dict(color=COLOR_TEXT_MUTED, size=10),
-            ),
-            angularaxis=dict(
-                direction="clockwise",
-                rotation=90,
-                tickvals=[0, 90, 180, 270],
-                ticktext=["N (0°)", "E (90°)", "S (180°)", "W (270°)"],
-                gridcolor=COLOR_GRID,
-                linecolor=COLOR_AXIS,
-                tickfont=dict(color=COLOR_TEXT, size=11),
-            ),
-        ),
-        title="Multi-Site Celestial Overlay — Sun Paths & Local Horizons",
+    names = list(dfs)
+    if not names:
+        raise ValueError("At least one site is required for comparison")
+    fig = make_subplots(
+        rows=len(names), cols=1, shared_xaxes=True,
+        subplot_titles=names, vertical_spacing=min(0.08, 0.3 / len(names)),
     )
-    _apply_dark_layout(fig, height=height)
+    for row, name in enumerate(names, start=1):
+        frame, _profile = dfs[name]
+        fig.add_trace(go.Scatter(
+            x=frame["time_utc"], y=frame["sun_alt_deg"],
+            mode="lines", name="Sun", legendgroup="sun",
+            showlegend=(row == 1), line=dict(color=COLOR_SUN),
+        ), row=row, col=1)
+        fig.add_trace(go.Scatter(
+            x=frame["time_utc"], y=frame["earth_alt_deg"],
+            mode="lines", name="Earth", legendgroup="earth",
+            showlegend=(row == 1), line=dict(color=COLOR_EARTH),
+        ), row=row, col=1)
+        fig.add_hline(y=0.0, line_dash="dot", line_color=COLOR_HORIZON, row=row, col=1)
+        fig.update_yaxes(title_text="Altitude (°)", row=row, col=1)
+    fig.update_xaxes(title_text="UTC", row=len(names), col=1)
+    _apply_dark_layout(fig, height=max(360, 240 * len(names)))
+    fig.update_layout(title=title)
+    return fig
+
+
+def mission_surface_timeline(times, sun_alt, earth_alt, horizon_alt, *, title: str) -> "go.Figure":
+    """Plot the surface-operations window when the Matplotlib animation is unavailable."""
+    if not _PLOTLY_OK:
+        raise RuntimeError("plotly is not installed")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=times, y=sun_alt, mode="lines", name="Sun altitude",
+        line=dict(color=COLOR_SUN, width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=times, y=earth_alt, mode="lines", name="Earth altitude",
+        line=dict(color=COLOR_EARTH, width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=times, y=horizon_alt, mode="lines", name="Selected horizon profile",
+        line=dict(color=COLOR_HORIZON, width=1.5, dash="dash"),
+    ))
+    fig.add_hline(y=0, line_color=COLOR_AXIS, line_dash="dot")
+    fig.update_yaxes(title_text="Altitude (°)", range=[-15, 15], zeroline=False)
+    fig.update_xaxes(title_text="UTC")
+    _apply_dark_layout(fig, height=420)
+    fig.update_layout(title=title)
     return fig

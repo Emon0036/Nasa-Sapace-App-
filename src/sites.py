@@ -1,8 +1,9 @@
 """
-Candidate lunar south polar landing sites.
+Nominal landing-site points retained from the original Lunar Horizon demo.
 
-Coordinates are approximate IAU_MOON selenographic. Elevations are rough
-baselines from LOLA; the horizon profile carries the actual terrain detail.
+These coordinates and elevation values are approximate prototype inputs, not
+verified landing-survey locations or confirmed LOLA extracts. Ephemerides are
+computed for the supplied points; this file does not claim terrain provenance.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ class Site:
     region: str  # "south_polar", "north_polar", "reference"
 
 
-# Source: NASA Artemis III candidate region announcements + LOLA elevations.
+# Existing prototype candidates. Exact coordinates/elevations have not been
+# cross-checked against NASA landing-zone products or LOLA tiles.
 SITES: Dict[str, Site] = {
     "shackleton_henson": Site(
         site_id="shackleton_henson",
@@ -112,6 +114,16 @@ SITES: Dict[str, Site] = {
         elev_m=0.0,
         description=("Synthetic flat site at high latitude; useful for "
                      "isolating the geometric (non-terrain) effects."),
+        region="reference",
+    ),
+    "south_pole_reference": Site(
+        site_id="south_pole_reference",
+        name="South Pole (geometry reference)",
+        lat_deg=-90.0,
+        lon_deg=0.0,
+        elev_m=0.0,
+        description=("Idealized point at the mean lunar south pole, included "
+                     "for a geometric sanity check rather than as a landing site."),
         region="reference",
     ),
 }

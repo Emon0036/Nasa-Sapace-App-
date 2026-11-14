@@ -1,0 +1,161 @@
+{
+  "title": "LOLA-derived terrain horizons for Lunar Horizon",
+  "source_instrument": "Lunar Orbiter Laser Altimeter (LOLA) aboard Lunar Reconnaissance Orbiter",
+  "source_archive": "NASA Planetary Data System Geosciences Node / NASA GSFC PGDA",
+  "source_dataset_doi": "10.17189/1520642",
+  "product_page": "https://pgda.gsfc.nasa.gov/products/78",
+  "product_description": "PGDA south-polar, track-adjusted 5 m/pixel LDEM GeoTIFFs derived from LRO-LOLA laser altimetry. The elevation maps are interpolated grids; pixel spacing is not equivalent to independent 5 m measurements.",
+  "coordinate_frame": "South-polar stereographic X/Y, MOON_ME reference frame of ephemeris DE421",
+  "vertical_units": "metres",
+  "profiles_generated_at_utc": "2026-11-13T23:13:49.531223+00:00",
+  "profile_method": {
+    "description": "Great-circle rays over the lunar sphere; terrain elevation is measured relative to the DEM value at the observer; the maximum obstruction angle is stored in each azimuth bin.",
+    "ray_azimuth_bins": 360,
+    "ray_step_m": 25.0,
+    "preferred_profile_range_km": 5.0,
+    "minimum_profile_range_km": 0.25,
+    "applied_only_when_every_azimuth_has_complete_valid_DEM_coverage": true
+  },
+  "tiles": [
+    {
+      "file": "data/terrain/lola/Site01_final_adj_5mpp_surf.tif",
+      "bytes": 40980810,
+      "sha256": "3ba7b97cb00a2bcf21189c3aeb535f65afc21207154ab9f0d43c5bdc1f7e747e",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site01/Site01_final_adj_5mpp_surf.tif",
+      "product_page": "https://pgda.gsfc.nasa.gov/products/78",
+      "tile_id": "Site01",
+      "region_name": "Connecting Ridge",
+      "center_latitude_deg": -89.46316283403667,
+      "center_longitude_deg_east": 222.51044707800082,
+      "center_elevation_m": 1944.76708984375,
+      "center_x_m": -11000.0,
+      "center_y_m": -12000.0,
+      "bounds_m": {
+        "left": -19000.0,
+        "bottom": -20000.0,
+        "right": -3000.0,
+        "top": -4000.0
+      },
+      "resolution_m": 5.0,
+      "coordinate_basis": "Georeferenced center of this regional DEM tile; a terrain-data sample location, not a surveyed landing site."
+    },
+    {
+      "file": "data/terrain/lola/Site04_final_adj_5mpp_surf.tif",
+      "bytes": 40980806,
+      "sha256": "38ff70dbdf2f066c2cfa94a646c3a59d653ce7f6b4528b15fc1b43ee397ce758",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site04/Site04_final_adj_5mpp_surf.tif",
+      "product_page": "https://pgda.gsfc.nasa.gov/products/78",
+      "tile_id": "Site04",
+      "region_name": "Shackleton Rim",
+      "center_latitude_deg": -89.76681145214992,
+      "center_longitude_deg_east": 188.13010235415598,
+      "center_elevation_m": 767.9786376953125,
+      "center_x_m": -1000.0,
+      "center_y_m": -7000.0,
+      "bounds_m": {
+        "left": -9000.0,
+        "bottom": -15000.0,
+        "right": 7000.0,
+        "top": 1000.0
+      },
+      "resolution_m": 5.0,
+      "coordinate_basis": "Georeferenced center of this regional DEM tile; a terrain-data sample location, not a surveyed landing site."
+    },
+    {
+      "file": "data/terrain/lola/Site07_final_adj_5mpp_surf.tif",
+      "bytes": 40980808,
+      "sha256": "38aaee10bb4da4d63e7427aa1ca25c79bdbc649d212079a04990e135462091f8",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site07/Site07_final_adj_5mpp_surf.tif",
+      "product_page": "https://pgda.gsfc.nasa.gov/products/78",
+      "tile_id": "Site07",
+      "region_name": "Peak near Shackleton",
+      "center_latitude_deg": -88.81100807350457,
+      "center_longitude_deg_east": 123.69006752597979,
+      "center_elevation_m": 1645.548828125,
+      "center_x_m": 30000.0,
+      "center_y_m": -20000.0,
+      "bounds_m": {
+        "left": 22000.0,
+        "bottom": -28000.0,
+        "right": 38000.0,
+        "top": -12000.0
+      },
+      "resolution_m": 5.0,
+      "coordinate_basis": "Georeferenced center of this regional DEM tile; a terrain-data sample location, not a surveyed landing site."
+    },
+    {
+      "file": "data/terrain/lola/Site20_final_adj_5mpp_surf.tif",
+      "bytes": 40980802,
+      "sha256": "e51451f3629ba7cd5cfc1b32c8c0ee3c5c454607488b00ea00cd06a9e301a892",
+      "url": "https://pgda.gsfc.nasa.gov/data/LOLA_5mpp/Site20/Site20_final_adj_5mpp_surf.tif",
+      "product_page": "https://pgda.gsfc.nasa.gov/products/78",
+      "tile_id": "Site20",
+      "region_name": "Leibnitz Beta Plateau",
+      "center_latitude_deg": -85.42657728044317,
+      "center_longitude_deg_east": 31.7427611534189,
+      "center_elevation_m": 6398.8330078125,
+      "center_x_m": 73000.0,
+      "center_y_m": 118000.0,
+      "bounds_m": {
+        "left": 65000.0,
+        "bottom": 110000.0,
+        "right": 81000.0,
+        "top": 126000.0
+      },
+      "resolution_m": 5.0,
+      "coordinate_basis": "Georeferenced center of this regional DEM tile; a terrain-data sample location, not a surveyed landing site."
+    }
+  ],
+  "site_profiles": [
+    {
+      "site_id": "shackleton_rim_w",
+      "site_name": "Shackleton Rim (West)",
+      "latitude_deg": -89.55,
+      "longitude_deg_east": 225.0,
+      "dem_surface_elevation_m": 1410.0264892578125,
+      "source_detail": "NASA GSFC PGDA LRO-LOLA adjusted LDEM Site01, 5 m/pixel; interpolated elevation grid",
+      "source_url": "https://pgda.gsfc.nasa.gov/products/78",
+      "coverage_range_km": 5.0,
+      "resolution_m": 5.0,
+      "profile_file": "data/horizons/shackleton_rim_w.json"
+    },
+    {
+      "site_id": "shackleton_rim_e",
+      "site_name": "Shackleton Rim (East)",
+      "latitude_deg": -89.65,
+      "longitude_deg_east": 141.0,
+      "dem_surface_elevation_m": -2737.7197265625,
+      "source_detail": "NASA GSFC PGDA LRO-LOLA adjusted LDEM Site04, 5 m/pixel; interpolated elevation grid",
+      "source_url": "https://pgda.gsfc.nasa.gov/products/78",
+      "coverage_range_km": 0.25,
+      "resolution_m": 5.0,
+      "profile_file": "data/horizons/shackleton_rim_e.json"
+    },
+    {
+      "site_id": "south_pole_reference",
+      "site_name": "South Pole (geometry reference)",
+      "latitude_deg": -90.0,
+      "longitude_deg_east": 0.0,
+      "dem_surface_elevation_m": 1289.12646484375,
+      "source_detail": "NASA GSFC PGDA LRO-LOLA adjusted LDEM Site04, 5 m/pixel; interpolated elevation grid",
+      "source_url": "https://pgda.gsfc.nasa.gov/products/78",
+      "coverage_range_km": 0.5,
+      "resolution_m": 5.0,
+      "profile_file": "data/horizons/south_pole_reference.json"
+    }
+  ],
+  "sites_without_terrain_profile": [
+    "shackleton_henson",
+    "shackleton_rim_n",
+    "de_la_rue",
+    "leibnitz_beta",
+    "cabeus",
+    "peary",
+    "flat_reference"
+  ],
+  "limitations": [
+    "Site coordinates are the prototype's nominal points, not surveyed landing locations.",
+    "A site without a complete radius of at least 0.25 km in a bundled tile keeps geometric visibility; profiles below 5 km represent only the stated local radius.",
+    "The regional DEM products include interpolation and do not establish local terrain accuracy at every 5 m pixel."
+  ]
+}

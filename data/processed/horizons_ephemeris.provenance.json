@@ -1,0 +1,65 @@
+{
+  "title": "Lunar Horizon topocentric ephemeris training and validation data",
+  "source_url": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "documentation_url": "https://ssd-api.jpl.nasa.gov/doc/horizons.html",
+  "retrieved_at_utc": "2026-11-12T21:04:07.595936+00:00",
+  "retrieval_method": "Horizons API observer ephemeris; apparent airless azimuth/elevation (quantity 4)",
+  "target_solution": [
+    "JPL Horizons / DE441"
+  ],
+  "targets": {
+    "sun": "10",
+    "earth": "399"
+  },
+  "observer_center": "coord@301 (Moon surface site)",
+  "observer_coordinate_type": "GEODETIC",
+  "coordinate_frame": "Horizons high-precision lunar mean-Earth (ME) observer frame",
+  "longitude_convention": "East-positive degrees",
+  "latitude_convention": "Planetographic/geodetic degrees",
+  "elevation_input_units": "metres in this CSV; converted to kilometres for Horizons SITE_COORD",
+  "output_units": {
+    "azimuth": "degrees clockwise from north",
+    "altitude": "degrees above local horizontal"
+  },
+  "time_standard": "UTC",
+  "requested_start_utc": "2026-06-01T00:00:00+00:00",
+  "requested_stop_utc": "2027-06-01T00:00:00+00:00",
+  "requested_step": "6h",
+  "site_coordinate_note": "Candidate coordinates/elevations are the existing prototype's nominal points, not verified landing survey data; the exact South Pole row is an idealized geometry reference, not a landing site.",
+  "label_provenance": "JPL Horizons DE ephemeris calculations; not spacecraft observations and not fabricated measurements.",
+  "processing_steps": [
+    "Query Sun and Earth separately for each lunar surface observer.",
+    "Parse Horizons $$SOE/$$EOE output rows and align the UTC timestamps.",
+    "Store apparent, airless topocentric azimuth/elevation in degrees.",
+    "Retain site coordinates, source solution, and frame metadata per row."
+  ],
+  "dataset_path": "data/processed/horizons_ephemeris.csv",
+  "row_count": 14610,
+  "site_ids": [
+    "shackleton_henson",
+    "shackleton_rim_e",
+    "shackleton_rim_w",
+    "shackleton_rim_n",
+    "de_la_rue",
+    "leibnitz_beta",
+    "cabeus",
+    "peary",
+    "flat_reference",
+    "south_pole_reference"
+  ],
+  "columns": [
+    "site_id",
+    "site_name",
+    "time_utc",
+    "sun_az_deg",
+    "sun_alt_deg",
+    "earth_az_deg",
+    "earth_alt_deg",
+    "latitude_deg",
+    "longitude_deg_east",
+    "elevation_m",
+    "ephemeris_source",
+    "coordinate_frame"
+  ],
+  "raw_response_cache": "data/raw/horizons_cache/ (one JSON response and provenance sidecar per target/query)"
+}

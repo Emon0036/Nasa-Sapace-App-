@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable, List, Tuple
 
 import numpy as np
@@ -31,84 +33,36 @@ class Summary:
     backend: str
 
     sun_above_horizon_pct: float        # geometric (>0)
-    sun_above_real_horizon_pct: float   # masked by terrain
+    sun_above_real_horizon_pct: float   # legacy name; geometric or processed-DEM mask
     sun_mean_altitude_deg: float
     sun_max_altitude_deg: float
 
     earth_above_horizon_pct: float
-    earth_above_real_horizon_pct: float
+    earth_above_real_horizon_pct: float  # legacy name; geometric or processed-DEM mask
     earth_mean_altitude_deg: float
     earth_min_altitude_deg: float
     earth_max_altitude_deg: float
 
     sunlit_continuous_hours_max: float
     earth_blackout_minutes: float
-    golden_window_pct: float
-    golden_window_continuous_hours_max: float
-    sun_min_clearance_deg: float
-    earth_min_clearance_deg: float
 
 
 def _continuous_runs(mask: np.ndarray, dt_hours: float) -> List[float]:
-    """Return durations (in hours) of contiguous True runs."""
-    runs = []
-    cur = 0
-    for v in mask:
-        if v:
-            cur += 1
-        else:
-            if cur > 0:
-                # A run that ends at a sampled false value spans `cur` sample
-                # intervals.  The final run is handled below because there is
-                # no sample after the requested analysis window to establish
-                # another interval.
-                runs.append(cur * dt_hours)
-                cur = 0
-    if cur > 0:
-        # Do not report time beyond the requested window.  For example, a
-        # 24-hour window sampled every 15 minutes has 97 samples but spans
-        # exactly 24 hours, not 24.25 hours.
-        runs.append(max(cur - 1, 0) * dt_hours)
+    """Return contiguous interval durations (in hours), without one-sample overcount."""
+    mask = np.asarray(mask, dtype=bool)
+    if len(mask) < 2:
+        return []
+    runs: list[float] = []
+    cur_intervals = 0
+    for left, right in zip(mask[:-1], mask[1:]):
+        if left and right:
+            cur_intervals += 1
+        elif cur_intervals:
+            runs.append(cur_intervals * dt_hours)
+            cur_intervals = 0
+    if cur_intervals:
+        runs.append(cur_intervals * dt_hours)
     return runs
-
-
-def golden_windows(df: pd.DataFrame,
-                   min_sun_elevation_deg: float = 0.0,
-                   min_earth_elevation_deg: float = 0.0) -> pd.DataFrame:
-    """Return contiguous periods with simultaneous Sun and Earth access.
-
-    Visibility always uses the terrain-aware boolean columns produced by
-    :func:`analyze`. Optional elevation thresholds are applied in addition.
-    The returned table contains only windows with UTC start/end and metrics
-    computed from the real time series.
-    """
-    if df.empty:
-        return pd.DataFrame(columns=["start_utc", "end_utc", "duration_hours",
-                                     "min_sun_elevation_deg",
-                                     "min_earth_elevation_deg"])
-    mask = (df["sun_visible"].astype(bool)
-            & df["earth_visible"].astype(bool)
-            & (df["sun_alt_deg"] >= float(min_sun_elevation_deg))
-            & (df["earth_alt_deg"] >= float(min_earth_elevation_deg)))
-    times = pd.to_datetime(df["time_utc"], utc=True)
-    rows = []
-    start = None
-    for i, active in enumerate(mask.to_numpy()):
-        if active and start is None:
-            start = i
-        if start is not None and (not active or i == len(mask) - 1):
-            end = i if active and i == len(mask) - 1 else i - 1
-            if end >= start:
-                duration_h = (times.iloc[end] - times.iloc[start]).total_seconds() / 3600.0
-                rows.append({
-                    "start_utc": times.iloc[start],
-                    "end_utc": times.iloc[end],
-                    "duration_hours": duration_h,
-                    "min_sun_elevation_deg": float(df.iloc[start:end + 1]["sun_alt_deg"].min()),
-                    "min_earth_elevation_deg": float(df.iloc[start:end + 1]["earth_alt_deg"].min()),
-                })
-            start = None
-    return pd.DataFrame(rows)
 
 
 def analyze(site: Site,
@@ -118,10 +72,10 @@ def analyze(site: Site,
             profile: horizon.HorizonProfile | None = None,
             include_dem_mask: bool = True) -> Tuple[pd.DataFrame, Summary]:
     """Compute sky time series and summary stats for a site over a window."""
-    if duration_hours < 0:
-        raise ValueError("duration_hours must be non-negative")
+    if duration_hours <= 0:
+        raise ValueError("duration_hours must be greater than zero")
     if step_minutes <= 0:
-        raise ValueError("step_minutes must be positive")
+        raise ValueError("step_minutes must be greater than zero")
     if start_utc.tzinfo is None:
         start_utc = start_utc.replace(tzinfo=timezone.utc)
 
@@ -129,7 +83,8 @@ def analyze(site: Site,
     times = [start_utc + timedelta(minutes=step_minutes * i) for i in range(n_steps)]
     dt_hours = step_minutes / 60.0
 
-    sky = ephemeris.compute_sky(times, site.lat_deg, site.lon_deg, site.elev_m)
+    sky = ephemeris.compute_sky(
+        times, site.lat_deg, site.lon_deg, site.elev_m, site_id=site.site_id)
     df = pd.DataFrame({
         "time_utc": sky.times_utc,
         "sun_alt_deg": sky.sun_alt,
@@ -141,7 +96,9 @@ def analyze(site: Site,
     if include_dem_mask and profile is None:
         profile = horizon.horizon_for_site(site.site_id, site.lat_deg, site.lon_deg, site.elev_m)
 
-    if include_dem_mask:
+    # Only a processed DEM is evidence for a terrain obstruction mask. The
+    # bundled deterministic profiles are visual aids, not measured LOLA data.
+    if include_dem_mask and profile is not None and profile.source == "dem":
         # Per-row horizon altitude: where the Sun / Earth must clear the rim
         horizon_sun = np.array([profile.horizon_altitude_at(az) for az in df["sun_az_deg"]])
         horizon_earth = np.array([profile.horizon_altitude_at(az) for az in df["earth_az_deg"]])
@@ -169,10 +126,6 @@ def _summarize(df: pd.DataFrame, site: Site,
     # Earth blackout: contiguous NOT-visible runs in minutes
     earth_runs = _continuous_runs((~df["earth_visible"]).values, dt_hours)
     earth_blackout_min = max(earth_runs) * 60 if earth_runs else 0.0
-    overlap = df["sun_visible"].astype(bool) & df["earth_visible"].astype(bool)
-    overlap_runs = _continuous_runs(overlap.values, dt_hours)
-    sun_clearance = df["sun_alt_deg"] - df.get("sun_horizon_deg", 0)
-    earth_clearance = df["earth_alt_deg"] - df.get("earth_horizon_deg", 0)
 
     return Summary(
         site_id=site.site_id,
@@ -192,10 +145,6 @@ def _summarize(df: pd.DataFrame, site: Site,
         earth_max_altitude_deg=float(df["earth_alt_deg"].max()),
         sunlit_continuous_hours_max=float(sun_run_max),
         earth_blackout_minutes=float(earth_blackout_min),
-        golden_window_pct=float(overlap.mean() * 100),
-        golden_window_continuous_hours_max=float(max(overlap_runs) if overlap_runs else 0.0),
-        sun_min_clearance_deg=float(sun_clearance.min()),
-        earth_min_clearance_deg=float(earth_clearance.min()),
     )
 
 
@@ -205,24 +154,55 @@ def date_sweep(site: Site,
                duration_hours: float = 24.0,
                step_minutes: float = 15.0,
                stride_days: float = 27.3,
-               include_dem_mask: bool = True) -> pd.DataFrame:
+               include_dem_mask: bool = False) -> pd.DataFrame:
     """Sample `n_dates` windows across a year (every ~lunar day) and return
     summary statistics per date. Returns a DataFrame keyed by date."""
-    if n_dates < 1:
-        raise ValueError("n_dates must be at least 1")
-    if duration_hours < 0:
-        raise ValueError("duration_hours must be non-negative")
-    if step_minutes <= 0:
-        raise ValueError("step_minutes must be positive")
     if start_date_utc.tzinfo is None:
         start_date_utc = start_date_utc.replace(tzinfo=timezone.utc)
 
     rows = []
+    cached_site = _cached_ephemeris_for_site(site.site_id)
     for i in range(n_dates):
         t0 = start_date_utc + timedelta(days=stride_days * i)
-        df, s = analyze(site, t0, duration_hours=duration_hours,
-                        step_minutes=step_minutes,
-                        include_dem_mask=include_dem_mask)
+        cached_window = None
+        if cached_site is not None and len(cached_site) >= 2:
+            offsets = np.abs((cached_site["time_utc"] - pd.Timestamp(t0)).dt.total_seconds().to_numpy())
+            nearest = int(np.argmin(offsets))
+            cache_step_hours = float(
+                (cached_site["time_utc"].iloc[1] - cached_site["time_utc"].iloc[0]).total_seconds() / 3600.0
+            )
+            cache_intervals = int(round(duration_hours / cache_step_hours)) if cache_step_hours > 0 else 0
+            cached_duration = cache_intervals * cache_step_hours
+            duration_matches_cache = cache_intervals >= 1 and abs(cached_duration - duration_hours) < 1e-6
+            if duration_matches_cache:
+                candidate = cached_site.iloc[nearest:nearest + cache_intervals + 1].copy()
+                if len(candidate) == cache_intervals + 1:
+                    cached_window = candidate
+
+        if cached_window is not None:
+            df = cached_window.rename(columns={
+                "sun_alt_deg": "sun_alt_deg", "sun_az_deg": "sun_az_deg",
+                "earth_alt_deg": "earth_alt_deg", "earth_az_deg": "earth_az_deg",
+            })
+            profile = horizon.horizon_for_site(site.site_id, site.lat_deg, site.lon_deg, site.elev_m) if include_dem_mask else None
+            if profile is not None and profile.source == "dem":
+                df["sun_horizon_deg"] = [profile.horizon_altitude_at(a) for a in df["sun_az_deg"]]
+                df["earth_horizon_deg"] = [profile.horizon_altitude_at(a) for a in df["earth_az_deg"]]
+                df["sun_visible"] = df["sun_alt_deg"] > df["sun_horizon_deg"]
+                df["earth_visible"] = df["earth_alt_deg"] > df["earth_horizon_deg"]
+            else:
+                df["sun_visible"] = df["sun_alt_deg"] > 0
+                df["earth_visible"] = df["earth_alt_deg"] > 0
+            sample_hours = float((df["time_utc"].iloc[1] - df["time_utc"].iloc[0]).total_seconds() / 3600.0)
+            s = _summarize(
+                df, site, pd.Timestamp(df["time_utc"].iloc[0]).to_pydatetime(),
+                pd.Timestamp(df["time_utc"].iloc[-1]).to_pydatetime(), sample_hours,
+                str(df["ephemeris_source"].iloc[0]) if "ephemeris_source" in df else "Horizons cache",
+            )
+        else:
+            df, s = analyze(site, t0, duration_hours=duration_hours,
+                            step_minutes=step_minutes,
+                            include_dem_mask=include_dem_mask)
         rows.append({
             "date_utc": t0.date().isoformat(),
             "sun_above_real_horizon_pct": s.sun_above_real_horizon_pct,
@@ -233,3 +213,20 @@ def date_sweep(site: Site,
             "earth_blackout_minutes": s.earth_blackout_minutes,
         })
     return pd.DataFrame(rows)
+
+
+@lru_cache(maxsize=4)
+def _load_horizons_training_data(path_string: str, modified_ns: int) -> pd.DataFrame:
+    del modified_ns
+    frame = pd.read_csv(path_string, parse_dates=["time_utc"])
+    frame["time_utc"] = pd.to_datetime(frame["time_utc"], utc=True)
+    return frame
+
+
+def _cached_ephemeris_for_site(site_id: str) -> pd.DataFrame | None:
+    path = Path(__file__).resolve().parent.parent / "data" / "processed" / "horizons_ephemeris.csv"
+    if not path.exists():
+        return None
+    frame = _load_horizons_training_data(str(path), path.stat().st_mtime_ns)
+    site_frame = frame[frame["site_id"] == site_id].sort_values("time_utc").reset_index(drop=True)
+    return site_frame if len(site_frame) else None

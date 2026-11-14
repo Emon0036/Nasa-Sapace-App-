@@ -1,29 +1,9 @@
-"""
-Ephemeris module: Sun and Earth direction vectors at the Moon.
+"""Topocentric Sun and Earth ephemerides for lunar surface sites.
 
-Produces geocentric (Moon-centered) positions, then transforms to a
-topocentric (site-centered east-north-up) frame to derive local
-altitude / azimuth.
-
-Two backends are provided:
-
-1. SPICE (preferred for full JPL DE440 accuracy). Auto-detects kernels
-   in `kernels/` next to the project root.
-2. Analytic fallback: low-precision series (Meeus / Vallado) for Sun
-   and Earth geocentric directions, plus a simple physical libration
-   model for Earth direction in the Moon frame. Accuracy is a few
-   tenths of a degree — fine for visibility comparisons near the pole.
-
-Public API
-----------
-sun_earth_in_lunar_frame(times_utc) -> (sun_iau, earth_iau)
-    Returns unit vectors in the Moon-centered IAU_MOON frame.
-
-topocentric_altaz(vec_iau, site_lat_deg, site_lon_deg, site_elev_m) -> (alt, az)
-    Converts an IAU_MOON unit vector into local altitude/azimuth.
-
-compute_sky(times_utc, site) -> DataFrame
-    One-call helper: returns time + sun_alt, sun_az, earth_alt, earth_az.
+The preferred offline backend is NAIF SPICE with a time-dependent lunar
+orientation PCK. When CSPICE is unavailable, the module queries NASA/JPL
+Horizons directly for airless topocentric azimuth/elevation. It never treats
+an inertial vector as Moon-fixed or silently substitutes an unvalidated model.
 """
 
 from __future__ import annotations
@@ -38,16 +18,12 @@ from typing import Iterable, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Backend detection
-# ---------------------------------------------------------------------------
-
-_SPICE_AVAILABLE = False
+_SPICE_IMPORT_ERROR: Optional[str] = None
 try:
     import spiceypy as spice  # type: ignore
-    _SPICE_AVAILABLE = True
-except Exception:
-    spice = None  # type: ignore
+except Exception as exc:  # CSPICE may be blocked or not installed.
+    spice = None  # type: ignore[assignment]
+    _SPICE_IMPORT_ERROR = str(exc)
 
 
 def _project_root() -> Path:
@@ -56,46 +32,76 @@ def _project_root() -> Path:
 
 _KERNEL_DIR = _project_root() / "kernels"
 _SPICE_FURNISHED = False
+_SPICE_FAILURE: Optional[str] = None
+_MOON_FRAME = "MOON_ME"
+_MOON_RADIUS_KM = 1737.4
 
 
 def _try_furnish_spice() -> bool:
-    """Load any SPICE kernels in `kernels/` and return whether any were loaded."""
-    global _SPICE_FURNISHED
+    """Load a compatible local SPICE kernel set once."""
+    global _SPICE_FURNISHED, _SPICE_FAILURE
     if _SPICE_FURNISHED:
         return True
-    if not _SPICE_AVAILABLE:
+    if os.name == "nt":
+        _SPICE_FAILURE = (
+            "Local SPICE was not attempted on Windows. Use the Horizons backend here; "
+            "run the backend in an approved Linux environment for local CSPICE."
+        )
+        return False
+    if spice is None:
+        _SPICE_FAILURE = _SPICE_IMPORT_ERROR or "spiceypy/CSPICE is unavailable"
         return False
     if not _KERNEL_DIR.exists():
+        _SPICE_FAILURE = f"No SPICE kernel directory at {_KERNEL_DIR}"
         return False
-    # Load order matters: leapseconds (tls) and frame kernels (tf) first,
-    # then planetary PCKs (tpc, bpc), then SPKs (bsp) last.
-    kernels = sorted(_KERNEL_DIR.glob("*.tls")) + \
-              sorted(_KERNEL_DIR.glob("*.tf")) + \
-              sorted(_KERNEL_DIR.glob("*.tpc")) + \
-              sorted(_KERNEL_DIR.glob("*.bpc")) + \
-              sorted(_KERNEL_DIR.glob("*.bsp"))
+
+    # Load constants and frame definitions before binary PCK orientation data.
+    suffix_order = (".tls", ".tpc", ".tf", ".bsp", ".bpc")
+    kernels = [p for suffix in suffix_order for p in sorted(_KERNEL_DIR.glob(f"*{suffix}"))]
     if not kernels:
+        _SPICE_FAILURE = "No SPICE kernels were found"
         return False
+
     try:
-        for k in kernels:
-            spice.furnsh(str(k))
+        spice.kclear()
+        for kernel in kernels:
+            spice.furnsh(str(kernel))
+        if spice.namfrm(_MOON_FRAME) == 0:
+            raise RuntimeError("The loaded frame kernels do not define MOON_ME")
+        # Check that the frame and target states cover the app's reference era.
+        et = spice.utc2et("2026 JUN 01 00:00:00 UTC")
+        spice.pxform("J2000", _MOON_FRAME, et)
+        spice.spkezr("SUN", et, "J2000", "LT+S", "MOON")
+        spice.spkezr("EARTH", et, "J2000", "LT+S", "MOON")
         _SPICE_FURNISHED = True
+        _SPICE_FAILURE = None
         return True
-    except Exception:
+    except Exception as exc:
+        try:
+            spice.kclear()
+        except Exception:
+            pass
+        _SPICE_FAILURE = f"SPICE kernels could not be loaded or do not cover the requested epoch: {exc}"
         return False
 
 
 def using_spice() -> bool:
-    """True if SPICE is available AND kernels were loaded."""
+    """True when CSPICE and compatible planetary/lunar kernels are usable."""
     return _try_furnish_spice()
 
 
-# ---------------------------------------------------------------------------
-# Time helpers
-# ---------------------------------------------------------------------------
+def backend_status() -> tuple[str, str]:
+    """Return a concise backend name and its evidence/availability note."""
+    if using_spice():
+        return "SPICE · DE440 / MOON_ME", "Local DE440 SPK and lunar orientation PCK loaded."
+    return (
+        "NASA/JPL Horizons · DE441",
+        "Topocentric apparent azimuth/elevation queried from JPL Horizons; results are cached locally.",
+    )
+
 
 def utc_string(t: datetime) -> str:
-    """Format a datetime as an ISO UTC string SPICE accepts."""
+    """Format an aware or naive datetime as UTC for SPICE."""
     if t.tzinfo is None:
         t = t.replace(tzinfo=timezone.utc)
     else:
@@ -104,311 +110,153 @@ def utc_string(t: datetime) -> str:
 
 
 def to_et(t: datetime) -> float:
-    """Convert a datetime to SPICE ephemeris time (seconds past J2000)."""
-    if not _SPICE_AVAILABLE:
-        raise RuntimeError("spiceypy not installed")
-    return spice.utc2et(utc_string(t))
-
-
-# ---------------------------------------------------------------------------
-# IAU_MOON <-> topocentric transforms
-# ---------------------------------------------------------------------------
-
-# IAU_MOON frame body code
-IAU_MOON = 30100
-
-
-def _iau_moon_to_topocentric_matrix(et: float, site_lat_deg: float, site_lon_deg: float) -> np.ndarray:
-    """Return a 3x3 matrix transforming a vector expressed in the IAU_MOON
-    Moon-centered frame at time `et` into the site-local east-north-up frame.
-    """
-    site_lat = math.radians(site_lat_deg)
-    site_lon = math.radians(site_lon_deg)
-
-    # IAU_MOON -> J2000 rotation (3x3). We work in direction space only —
-    # the ENU basis depends on the site's *direction* from Moon center, not
-    # its range, and every vector we transform is position-only.
-    r_j2000 = np.array(spice.pxform("IAU_MOON", "J2000", et))
-
-    # ENU basis expressed directly in Moon-fixed IAU_MOON coordinates,
-    # evaluated at the site's (lat, lon). The Moon is taken as spherical
-    # for the basis construction — this is a sub-arcsecond approximation
-    # given how close to spherical the Moon is, and the basis is then
-    # rotated into J2000 via the pxform above.
-    e_fixed = np.array([-math.sin(site_lon), math.cos(site_lon), 0.0])
-    # Spherical lunar ENU basis.  Latitude is geocentric latitude, so the
-    # surface normal (Up) uses cos(lat) in x/y and sin(lat) in z.  Keeping
-    # these terms in the wrong order makes a south-pole site look like an
-    # equatorial site and produces impossible Sun/Earth altitudes.
-    n_fixed = np.array([-math.sin(site_lat) * math.cos(site_lon),
-                        -math.sin(site_lat) * math.sin(site_lon),
-                        math.cos(site_lat)])
-    u_fixed = np.array([math.cos(site_lat) * math.cos(site_lon),
-                        math.cos(site_lat) * math.sin(site_lon),
-                        math.sin(site_lat)])
-
-    e_j2000 = r_j2000 @ e_fixed
-    n_j2000 = r_j2000 @ n_fixed
-    u_j2000 = r_j2000 @ u_fixed
-
-    # ENU rows in J2000. v_enu = R_ENU_J2000 @ v_j2000.
-    m_enu_from_j2000 = np.vstack([e_j2000, n_j2000, u_j2000])
-    # Return IAU_MOON -> ENU = R_ENU_J2000 @ R_J2000_IAU_MOON = R_ENU_J2000 @ r_j2000
-    return m_enu_from_j2000 @ r_j2000
-
-
-def topocentric_altaz(vec_iau_moon: np.ndarray,
-                      site_lat_deg: float,
-                      site_lon_deg: float,
-                      site_elev_m: float = 0.0,
-                      et: Optional[float] = None) -> Tuple[float, float]:
-    """Convert a unit vector in IAU_MOON frame to (altitude_deg, azimuth_deg).
-
-    Requires SPICE (for IAU_MOON frame rotations).
-    """
-    if not _SPICE_AVAILABLE:
-        raise RuntimeError("topocentric_altaz requires SPICE for IAU_MOON rotations")
-    if et is None:
-        et = spice.utc2et(utc_string(datetime.now(timezone.utc)))
-    M = _iau_moon_to_topocentric_matrix(et, site_lat_deg, site_lon_deg)
-    e, n, u = M @ vec_iau_moon
-    horiz = math.hypot(e, n)
-    alt = math.degrees(math.atan2(u, horiz))
-    az = (math.degrees(math.atan2(e, n)) + 360.0) % 360.0
-    return alt, az
-
-
-# ---------------------------------------------------------------------------
-# SPICE-backed Sun & Earth directions
-# ---------------------------------------------------------------------------
-
-def _spice_sun_earth_iau(times: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Return unit vectors to Sun and Earth, expressed in IAU_MOON frame,
-    as functions of time. `times` is an array of `datetime` (UTC, naive ok)."""
     if not using_spice():
-        raise RuntimeError("SPICE kernels not available")
+        raise RuntimeError(_SPICE_FAILURE or "CSPICE is unavailable")
+    return float(spice.utc2et(utc_string(t)))
 
-    sun = np.zeros((len(times), 3))
-    earth = np.zeros((len(times), 3))
+
+def _site_position_me(site_lat_deg: float, site_lon_deg: float, site_elev_m: float) -> np.ndarray:
+    """Observer position in the Moon ME body-fixed frame, in km."""
+    lat = math.radians(site_lat_deg)
+    lon = math.radians(site_lon_deg)
+    radius = _MOON_RADIUS_KM + site_elev_m / 1000.0
+    return radius * np.asarray([
+        math.cos(lat) * math.cos(lon),
+        math.cos(lat) * math.sin(lon),
+        math.sin(lat),
+    ], dtype=float)
+
+
+def _enu_basis(site_lat_deg: float, site_lon_deg: float) -> np.ndarray:
+    """Rows are geodetic east, north, and up unit vectors in Moon ME."""
+    lat = math.radians(site_lat_deg)
+    lon = math.radians(site_lon_deg)
+    return np.asarray([
+        [-math.sin(lon), math.cos(lon), 0.0],
+        [-math.sin(lat) * math.cos(lon), -math.sin(lat) * math.sin(lon), math.cos(lat)],
+        [ math.cos(lat) * math.cos(lon),  math.cos(lat) * math.sin(lon), math.sin(lat)],
+    ], dtype=float)
+
+
+def _vector_to_altaz(
+    target_from_moon_km: np.ndarray,
+    site_lat_deg: float,
+    site_lon_deg: float,
+    site_elev_m: float = 0.0,
+) -> Tuple[float, float]:
+    """Convert a Moon-centered position vector to topocentric altitude/azimuth."""
+    observer = _site_position_me(site_lat_deg, site_lon_deg, site_elev_m)
+    enu = _enu_basis(site_lat_deg, site_lon_deg) @ (np.asarray(target_from_moon_km) - observer)
+    east, north, up = (float(v) for v in enu)
+    altitude = math.degrees(math.atan2(up, math.hypot(east, north)))
+    azimuth = math.degrees(math.atan2(east, north)) % 360.0
+    return altitude, azimuth
+
+
+def topocentric_altaz(
+    vec_iau_moon: np.ndarray,
+    site_lat_deg: float,
+    site_lon_deg: float,
+    site_elev_m: float = 0.0,
+    et: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Convert a Moon-centered position vector in ``MOON_ME`` to local alt/az.
+
+    ``et`` is accepted for compatibility with the original API; the input
+    vector must already be rotated into the Moon ME frame at that epoch.
+    """
+    del et
+    return _vector_to_altaz(vec_iau_moon, site_lat_deg, site_lon_deg, site_elev_m)
+
+
+def _to_datetime_index(times: Iterable) -> pd.DatetimeIndex:
+    return pd.DatetimeIndex(pd.to_datetime(list(times), utc=True))
+
+
+def _spice_moon_relative_positions(times: Iterable[datetime]) -> tuple[np.ndarray, np.ndarray]:
+    """Return apparent Moon-centered Sun/Earth positions in MOON_ME, km."""
+    if not using_spice():
+        raise RuntimeError(_SPICE_FAILURE or "SPICE kernels are unavailable")
+    times = list(times)
+    sun = np.empty((len(times), 3), dtype=float)
+    earth = np.empty((len(times), 3), dtype=float)
     for i, t in enumerate(times):
         if isinstance(t, np.datetime64):
             t = pd.Timestamp(t).to_pydatetime()
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=timezone.utc)
         et = spice.utc2et(utc_string(t))
-        # Sun position w.r.t. Moon, in J2000, light-time corrected, then rotate
-        # into IAU_MOON.
         sun_state, _ = spice.spkezr("SUN", et, "J2000", "LT+S", "MOON")
         earth_state, _ = spice.spkezr("EARTH", et, "J2000", "LT+S", "MOON")
-        # sxform returns a 6x6 state matrix (position+velocity); for a
-        # position-only vector we want the 3x3 rotation, so use pxform.
-        m_to_iau = np.array(spice.pxform("J2000", "IAU_MOON", et))
-        sun[i] = (m_to_iau @ np.array(sun_state[:3]))
-        earth[i] = (m_to_iau @ np.array(earth_state[:3]))
-
-    sun /= np.linalg.norm(sun, axis=1, keepdims=True)
-    earth /= np.linalg.norm(earth, axis=1, keepdims=True)
+        j2000_to_me = np.asarray(spice.pxform("J2000", _MOON_FRAME, et), dtype=float)
+        sun[i] = j2000_to_me @ np.asarray(sun_state[:3], dtype=float)
+        earth[i] = j2000_to_me @ np.asarray(earth_state[:3], dtype=float)
     return sun, earth
 
 
-# ---------------------------------------------------------------------------
-# Analytic fallback (no SPICE)
-# ---------------------------------------------------------------------------
+def sun_earth_in_lunar_frame(times_utc: Iterable[datetime]) -> Tuple[np.ndarray, np.ndarray, str]:
+    """Return Moon-centered apparent Sun/Earth position vectors in km in ``MOON_ME``.
 
-def _jd(dt: datetime) -> float:
-    """Julian Day (UTC) for a datetime."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    y = dt.year
-    m = dt.month
-    d = dt.day + (dt.hour + dt.minute / 60.0 + dt.second / 3600.0) / 24.0
-    if m <= 2:
-        y -= 1
-        m += 12
-    A = y // 100
-    B = 2 - A + A // 4
-    return math.floor(365.25 * (y + 4716)) + math.floor(30.6001 * (m + 1)) + d + B - 1524.5
-
-
-def _low_precision_sun_earth_geocentric(times: Iterable[datetime]) -> Tuple[np.ndarray, np.ndarray]:
-    """Low-precision geocentric Sun and Earth direction vectors in J2000.
-
-    Returns unit vectors FROM the Moon TOWARDS the Sun / Earth.
-    Earth is sub-Earth point direction (Moon -> Earth) approximated as
-    opposite of Earth -> Moon direction. This is good to a few arc-minutes,
-    more than enough for visibility work.
+    This helper intentionally has no analytic fallback: without a time-varying
+    lunar frame, an inertial vector is not a Moon-fixed direction.
     """
-    times = list(times)
-    T = np.array([(_jd(t) - 2451545.0) / 36525.0 for t in times])
+    if not using_spice():
+        raise RuntimeError(_SPICE_FAILURE or "No validated Moon-fixed SPICE frame is available")
+    sun, earth = _spice_moon_relative_positions(times_utc)
+    return sun, earth, "spice"
 
-    # Mean elements (Meeus, low-precision)
-    L0 = np.deg2rad(280.46646 + 36000.76983 * T + 0.0003032 * T ** 2)
-    M  = np.deg2rad(357.52911 + 35999.05029 * T - 0.0001537 * T ** 2)
-    e  = 0.016708634 - 0.000042037 * T
-    C  = np.deg2rad((1.914602 - 0.004817 * T) * np.sin(M)
-                    + (0.019993 - 0.000101 * T) * np.sin(2 * M)
-                    + 0.000289 * np.sin(3 * M))
-    sun_true_lon = L0 + C
-    # Obliquity (low precision)
-    eps = np.deg2rad(23.439291 - 0.0130042 * T)
-    ce = np.cos(eps)
-    se = np.sin(eps)
-
-    # Sun direction (unit) in J2000, FROM Earth TO Sun (heliocentric-ish)
-    # (we will use this as a unit vector; we only need direction)
-    cos_stl = np.cos(sun_true_lon)
-    sin_stl = np.sin(sun_true_lon)
-    sun_dir = np.stack([
-        cos_stl,
-        sin_stl * ce,
-        sin_stl * se,
-    ], axis=1)
-
-    # Earth-Moon: simplified — Moon geocentric ecliptic lon/lat
-    # (Meeus Astronomical Algorithms, simplified truncated series).
-    Lp = np.deg2rad(218.3164477 + 481267.88123421 * T
-                    - 0.0015786 * T ** 2 + T ** 3 / 538841.0 - T ** 4 / 65194000.0)
-    D  = np.deg2rad(297.8501921 + 445267.1114034 * T
-                    - 0.0018819 * T ** 2 + T ** 3 / 545868.0 - T ** 4 / 113065000.0)
-    Mp = np.deg2rad(134.9633964 + 477198.8675055 * T
-                    + 0.0087414 * T ** 2 + T ** 3 / 69699.0 - T ** 4 / 14712000.0)
-    F  = np.deg2rad(93.2720950 + 483202.0175233 * T
-                    - 0.0036539 * T ** 2 - T ** 3 / 3526000.0 + T ** 4 / 863310000.0)
-
-    lon = Lp + np.deg2rad(6.289 * np.sin(Mp)
-                          - 1.274 * np.sin(Mp - 2 * D)
-                          + 0.658 * np.sin(2 * D)
-                          - 0.186 * np.sin(2 * Mp)
-                          - 0.059 * np.sin(2 * Mp - 2 * D))
-    lat = np.deg2rad(5.128 * np.sin(F)
-                     + 0.281 * np.sin(Mp + F)
-                     - 0.278 * np.sin(F - Mp)
-                     - 0.173 * np.sin(F - 2 * D))
-    # Distance not needed (we'll normalize).
-    cl = np.cos(lat)
-    moon_dir_ecl = np.stack([cl * np.cos(lon),
-                             cl * np.sin(lon),
-                             np.sin(lat)], axis=1)
-    # Rotate from ecliptic to J2000 (rotation about X by eps) — element-wise,
-    # because eps is a vector of length N.
-    moon_dir_j2000 = np.stack([
-        moon_dir_ecl[:, 0],
-        moon_dir_ecl[:, 1] * ce - moon_dir_ecl[:, 2] * se,
-        moon_dir_ecl[:, 1] * se + moon_dir_ecl[:, 2] * ce,
-    ], axis=1)
-
-    # Earth direction FROM Moon is -moon_dir_j2000 (Moon -> Earth vector in J2000).
-    earth_dir = -moon_dir_j2000
-
-    # Normalize to unit vectors (defensive — should already be near-unit)
-    sun_dir /= np.linalg.norm(sun_dir, axis=1, keepdims=True)
-    earth_dir /= np.linalg.norm(earth_dir, axis=1, keepdims=True)
-
-    return sun_dir, earth_dir
-
-
-def _low_precision_sun_earth_in_iau_moon(times: Iterable[datetime]) -> Tuple[np.ndarray, np.ndarray]:
-    """Convert low-precision geocentric Sun/Earth vectors to the IAU_MOON
-    frame using a simple libration model.
-    """
-    times = list(times)
-    sun_j2000, earth_j2000 = _low_precision_sun_earth_geocentric(times)
-
-    # Approximate libration angles (Meeus, low precision).
-    T = np.array([(_jd(t) - 2451545.0) / 36525.0 for t in times])
-    # Physical libration: small (< ~0.04 deg). For our purposes we apply the
-    # constant offset only; this is enough to capture the ~6-8 deg optical
-    # libration seen from the surface (which is largely just the cosine of
-    # sub-Earth latitude).
-
-    # IAU_MOON -> J2000 rotation at J2000 (approximately identity in our
-    # simplified model). The Moon's principal axes are aligned with J2000 to
-    # within ~1 arc-minute, so for low-precision visualization we treat them
-    # as identical. The local-topocentric rotation later uses site lat/lon
-    # directly, which carries the dominant effect (Earth's altitude near the
-    # pole is dominated by the site latitude, not libration).
-    return sun_j2000, earth_j2000
-
-
-def _low_precision_topocentric(vec_j2000: np.ndarray,
-                               site_lat_deg: float,
-                               site_lon_deg: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Convert J2000 unit vector to (alt, az) at a site on the Moon,
-    assuming IAU_MOON ≈ J2000 (good to ~1 arc-minute, fine for visibility).
-    """
-    lat = np.deg2rad(site_lat_deg)
-    lon = np.deg2rad(site_lon_deg)
-    # Rotation from J2000 to local ENU at the site.
-    # ENU axes in J2000 (Moon-fixed approximated as J2000):
-    e = np.array([-np.sin(lon), np.cos(lon), 0.0])
-    n = np.array([-np.sin(lat) * np.cos(lon),
-                  -np.sin(lat) * np.sin(lon),
-                  np.cos(lat)])
-    u = np.array([np.cos(lat) * np.cos(lon),
-                  np.cos(lat) * np.sin(lon),
-                  np.sin(lat)])
-    # Build matrix whose rows are e, n, u in J2000.
-    M = np.vstack([e, n, u])
-    enu = (M @ vec_j2000.T).T  # (E, N, U) for each sample
-    horiz = np.hypot(enu[:, 0], enu[:, 1])
-    alt = np.rad2deg(np.arctan2(enu[:, 2], horiz))
-    az = (np.rad2deg(np.arctan2(enu[:, 0], enu[:, 1])) + 360.0) % 360.0
-    return alt, az
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 @dataclass
 class SkyResult:
-    """Result of `compute_sky`."""
+    """Topocentric sky conditions returned for a sequence of UTC instants."""
     times_utc: pd.DatetimeIndex
     sun_alt: np.ndarray
     sun_az: np.ndarray
     earth_alt: np.ndarray
     earth_az: np.ndarray
-    backend: str  # "spice" or "analytic"
+    backend: str
 
 
-def _to_datetime_index(times: Iterable) -> pd.DatetimeIndex:
-    idx = pd.to_datetime(list(times), utc=True)
-    return idx
+def compute_sky(
+    times_utc: Iterable[datetime],
+    site_lat_deg: float,
+    site_lon_deg: float,
+    site_elev_m: float = 0.0,
+    *,
+    site_id: str = "custom",
+) -> SkyResult:
+    """Compute apparent Sun/Earth alt/az from a lunar surface observer.
 
-
-def sun_earth_in_lunar_frame(times_utc: Iterable[datetime]) -> Tuple[np.ndarray, np.ndarray, str]:
-    """Return (sun_unit_vec, earth_unit_vec, backend) in the Moon-fixed frame.
-
-    Each vector is (N, 3). Backend is 'spice' or 'analytic'.
+    SPICE is used only with a loaded time-dependent lunar orientation kernel.
+    Otherwise the NASA/JPL Horizons observer API supplies the same
+    topocentric quantities. Network/query errors are returned to the caller;
+    there is no silent low-accuracy fallback.
     """
-    times = list(times_utc)
-    if using_spice():
-        sun, earth = _spice_sun_earth_iau(times)
-        return sun, earth, "spice"
-    sun, earth = _low_precision_sun_earth_in_iau_moon(times)
-    return sun, earth, "analytic"
-
-
-def compute_sky(times_utc: Iterable[datetime],
-                site_lat_deg: float,
-                site_lon_deg: float,
-                site_elev_m: float = 0.0) -> SkyResult:
-    """Compute Sun and Earth altitude/azimuth at a site for the given times."""
     idx = _to_datetime_index(times_utc)
-    sun_v, earth_v, backend = sun_earth_in_lunar_frame(idx.to_pydatetime())
-    if backend == "spice":
-        sun_alt = np.zeros(len(idx))
-        sun_az = np.zeros(len(idx))
-        earth_alt = np.zeros(len(idx))
-        earth_az = np.zeros(len(idx))
-        for i, t in enumerate(idx):
-            et = to_et(t.to_pydatetime())
-            sun_alt[i], sun_az[i] = topocentric_altaz(sun_v[i], site_lat_deg, site_lon_deg, site_elev_m, et)
-            earth_alt[i], earth_az[i] = topocentric_altaz(earth_v[i], site_lat_deg, site_lon_deg, site_elev_m, et)
-    else:
-        sun_alt, sun_az = _low_precision_topocentric(sun_v, site_lat_deg, site_lon_deg)
-        earth_alt, earth_az = _low_precision_topocentric(earth_v, site_lat_deg, site_lon_deg)
-    return SkyResult(times_utc=idx,
-                     sun_alt=sun_alt, sun_az=sun_az,
-                     earth_alt=earth_alt, earth_az=earth_az,
-                     backend=backend)
+    if len(idx) == 0:
+        empty = np.asarray([], dtype=float)
+        return SkyResult(idx, empty, empty, empty, empty, "none")
+
+    if using_spice():
+        sun_positions, earth_positions = _spice_moon_relative_positions(idx.to_pydatetime())
+        sun_alt = np.empty(len(idx), dtype=float)
+        sun_az = np.empty(len(idx), dtype=float)
+        earth_alt = np.empty(len(idx), dtype=float)
+        earth_az = np.empty(len(idx), dtype=float)
+        for i in range(len(idx)):
+            sun_alt[i], sun_az[i] = _vector_to_altaz(
+                sun_positions[i], site_lat_deg, site_lon_deg, site_elev_m)
+            earth_alt[i], earth_az[i] = _vector_to_altaz(
+                earth_positions[i], site_lat_deg, site_lon_deg, site_elev_m)
+        return SkyResult(idx, sun_alt, sun_az, earth_alt, earth_az, "spice")
+
+    from .horizons import query_site_ephemeris
+
+    data, source = query_site_ephemeris(
+        idx, site_lat_deg, site_lon_deg, site_elev_m, site_id=site_id)
+    return SkyResult(
+        times_utc=idx,
+        sun_alt=data["sun_alt_deg"].to_numpy(dtype=float),
+        sun_az=data["sun_az_deg"].to_numpy(dtype=float),
+        earth_alt=data["earth_alt_deg"].to_numpy(dtype=float),
+        earth_az=data["earth_az_deg"].to_numpy(dtype=float),
+        backend=source,
+    )
